@@ -118,6 +118,7 @@ var typeMappingPostgres = map[string]string{
 	"time":                        "time.Time",
 	"timestamp":                   "time.Time",
 	"timestamp without time zone": "time.Time",
+	"timestamp with time zone":    "time.Time",
 	"interval":                    "string",  // time interval, string for now
 	"real":                        "float32", // float & decimal
 	"double precision":            "float64",
@@ -130,6 +131,7 @@ var typeMappingPostgres = map[string]string{
 	"USER-DEFINED":                "string",  // user defined
 	"uuid":                        "string",  // uuid
 	"json":                        "string",  // json
+	"jsonb":                       "string",
 }
 
 // Table represent a table in a database
@@ -499,7 +501,9 @@ func (mysqlDB *MysqlDB) GetColumns(db *sql.DB, table *Table, blackList map[strin
 
 // getGoDataType maps an SQL data type to Golang data type
 func (*MysqlDB) GetGoDataType(sqlType string) (goType string) {
-	if v, ok := typeMappingMysql[sqlType]; ok {
+	var typeMapping = map[string]string{}
+	typeMapping = typeMappingMysql
+	if v, ok := typeMapping[sqlType]; ok {
 		return v
 	} else {
 		ColorLog("[ERRO] data type (%s) not found!\n", sqlType)
@@ -761,6 +765,7 @@ func writeModelFiles(tables []*Table, mPath string, selectedTables map[string]bo
 		}
 		fileStr := strings.Replace(template, "{{modelStruct}}", tb.String(), 1)
 		fileStr = strings.Replace(fileStr, "{{modelName}}", camelCase(tb.Name), -1)
+		fileStr = strings.Replace(fileStr, "{{tableName}}", tb.Name, -1)
 		// if table contains time field, import time.Time package
 		timePkg := ""
 		importTimePkg := ""
@@ -1002,6 +1007,10 @@ import (
 )
 
 {{modelStruct}}
+
+func (t *{{modelName}}) TableName() string {
+	return "{{tableName}}"
+}
 
 func init() {
 	orm.RegisterModel(new({{modelName}}))

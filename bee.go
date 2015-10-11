@@ -25,7 +25,7 @@ import (
 	"strings"
 )
 
-const version = "1.2.3"
+const version = "1.3.0"
 
 type Command struct {
 	// Run runs the command.
@@ -77,6 +77,7 @@ var commands = []*Command{
 	cmdRun,
 	cmdPack,
 	cmdApiapp,
+	cmdHproseapp,
 	//cmdRouter,
 	//cmdTest,
 	cmdBale,

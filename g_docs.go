@@ -45,30 +45,34 @@ import (
 	"github.com/astaxie/beego/swagger"
 )
 
-var rootinfo string = {{.rootinfo}}
-var subapi string = {{.subapi}}
-var rootapi swagger.ResourceListing
+const (
+    Rootinfo string = {{.rootinfo}}
+    Subapi string = {{.subapi}}
+    BasePath string= "{{.version}}"
+)
 
+var rootapi swagger.ResourceListing
 var apilist map[string]*swagger.ApiDeclaration
 
 func init() {
-	basepath := "{{.version}}"
-	err := json.Unmarshal([]byte(rootinfo), &rootapi)
-	if err != nil {
-		beego.Error(err)
-	}
-	err = json.Unmarshal([]byte(subapi), &apilist)
-	if err != nil {
-		beego.Error(err)
-	}
-	beego.GlobalDocApi["Root"] = rootapi
-	for k, v := range apilist {
-		for i, a := range v.Apis {
-			a.Path = urlReplace(k + a.Path)
-			v.Apis[i] = a
+	if beego.EnableDocs {
+		err := json.Unmarshal([]byte(Rootinfo), &rootapi)
+		if err != nil {
+			beego.Error(err)
 		}
-		v.BasePath = basepath
-		beego.GlobalDocApi[strings.Trim(k, "/")] = v
+		err = json.Unmarshal([]byte(Subapi), &apilist)
+		if err != nil {
+			beego.Error(err)
+		}
+		beego.GlobalDocApi["Root"] = rootapi
+		for k, v := range apilist {
+			for i, a := range v.Apis {
+				a.Path = urlReplace(k + a.Path)
+				v.Apis[i] = a
+			}
+			v.BasePath = BasePath
+			beego.GlobalDocApi[strings.Trim(k, "/")] = v
+		}
 	}
 }
 
@@ -147,7 +151,11 @@ func generateDocs(curpath string) {
 		}
 	}
 	for _, im := range f.Imports {
-		analisyscontrollerPkg(im.Path.Value)
+		localName := ""
+		if im.Name != nil {
+			localName = im.Name.Name
+		}
+		analisyscontrollerPkg(localName, im.Path.Value)
 	}
 	for _, d := range f.Decls {
 		switch specDecl := d.(type) {
@@ -254,13 +262,17 @@ func analisysNSInclude(baseurl string, ce *ast.CallExpr) string {
 	return cname
 }
 
-func analisyscontrollerPkg(pkgpath string) {
+func analisyscontrollerPkg(localName, pkgpath string) {
 	pkgpath = strings.Trim(pkgpath, "\"")
 	if isSystemPackage(pkgpath) {
 		return
 	}
-	pps := strings.Split(pkgpath, "/")
-	importlist[pps[len(pps)-1]] = pkgpath
+	if localName != "" {
+		importlist[localName] = pkgpath
+	} else {
+		pps := strings.Split(pkgpath, "/")
+		importlist[pps[len(pps)-1]] = pkgpath
+	}
 	if pkgpath == "github.com/astaxie/beego" {
 		return
 	}
@@ -331,6 +343,13 @@ func isSystemPackage(pkgpath string) bool {
 	if utils.FileExists(wg) {
 		return true
 	}
+
+	//TODO(zh):support go1.4
+	wg, _ = filepath.EvalSymlinks(filepath.Join(goroot, "src", pkgpath))
+	if utils.FileExists(wg) {
+		return true
+	}
+
 	return false
 }
 
@@ -561,27 +580,54 @@ func getModel(str string) (pkgpath, objectname string, m swagger.Model, realType
 							} else {
 								mp.Type = realType
 							}
-							// if the tag contains json tag, set the name to the left most json tag
-							var name = field.Names[0].Name
-							if field.Tag != nil {
+
+							// dont add property if anonymous field
+							if field.Names != nil {
+
+								// set property name as field name
+								var name = field.Names[0].Name
+
+								// if no tag skip tag processing
+								if field.Tag == nil {
+									m.Properties[name] = mp
+									continue
+								}
+
+								var tagValues []string
 								stag := reflect.StructTag(strings.Trim(field.Tag.Value, "`"))
-								if tag := stag.Get("json"); tag != "" {
-									name = tag
+								tag := stag.Get("json")
+
+								if tag != "" {
+									tagValues = strings.Split(tag, ",")
 								}
-								if thrifttag := stag.Get("thrift"); thrifttag != "" {
-									ts := strings.Split(thrifttag, ",")
-									if ts[0] != "" {
-										name = ts[0]
+
+								// dont add property if json tag first value is "-"
+								if len(tagValues) == 0 || tagValues[0] != "-" {
+
+									// set property name to the left most json tag value only if is not omitempty
+									if len(tagValues) > 0 && tagValues[0] != "omitempty" {
+										name = tagValues[0]
 									}
+
+									if thrifttag := stag.Get("thrift"); thrifttag != "" {
+										ts := strings.Split(thrifttag, ",")
+										if ts[0] != "" {
+											name = ts[0]
+										}
+									}
+									if required := stag.Get("required"); required != "" {
+										m.Required = append(m.Required, name)
+									}
+									if desc := stag.Get("description"); desc != "" {
+										mp.Description = desc
+									}
+
+									m.Properties[name] = mp
 								}
-								if required := stag.Get("required"); required != "" {
-									m.Required = append(m.Required, name)
-								}
-								if desc := stag.Get("description"); desc != "" {
-									mp.Description = desc
+								if ignore := stag.Get("ignore"); ignore != "" {
+									continue
 								}
 							}
-							m.Properties[name] = mp
 						}
 					}
 					return

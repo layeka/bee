@@ -23,24 +23,12 @@ import (
 )
 
 var cmdRun = &Command{
-	UsageLine: "run [appname] [watchall] [-main=*.go] [-downdoc=true]  [-gendoc=true]",
-	Short:     "run the app which can hot compile",
+	UsageLine: "run [appname] [watchall] [-main=*.go] [-downdoc=true]  [-gendoc=true]  [-e=Godeps -e=folderToExclude]",
+	Short:     "run the app and start a Web server for development",
 	Long: `
-start the appname throw exec.Command
+Run command will supervise the file system of the beego project using inotify,
+it will recompile and restart the app after any modifications.
 
-then start a inotify watch for current dir
-										
-when the file has changed bee will auto go build and restart the app
-
-	file changed
-	     |
-  check if it's go file
-	     |
-     yes     no
-      |       |
- go build    do nothing
-     |
- restart app   
 `,
 }
 
@@ -49,11 +37,15 @@ var mainFiles ListOpts
 var downdoc docValue
 var gendoc docValue
 
+// The flags list of the paths excluded from watching
+var excludedPaths strFlags
+
 func init() {
 	cmdRun.Run = runApp
 	cmdRun.Flag.Var(&mainFiles, "main", "specify main go files")
 	cmdRun.Flag.Var(&gendoc, "gendoc", "auto generate the docs")
 	cmdRun.Flag.Var(&downdoc, "downdoc", "auto download swagger file when not exist")
+	cmdRun.Flag.Var(&excludedPaths, "e", "Excluded paths[].")
 }
 
 var appname string
@@ -67,6 +59,14 @@ func runApp(cmd *Command, args []string) int {
 		ColorLog("[INFO] Uses '%s' as 'appname'\n", appname)
 	} else {
 		appname = args[0]
+		ColorLog("[INFO] Uses '%s' as 'appname'\n", appname)
+		if strings.HasSuffix(appname, ".go") && isExist(path.Join(crupath, appname)) {
+			ColorLog("[WARN] The appname has conflic with crupath's file, do you want to build appname as %s\n", appname)
+			ColorLog("[INFO] Do you want to overwrite it? [yes|no]]  ")
+			if !askForConfirmation() {
+				return 0
+			}
+		}
 	}
 	Debugf("current path:%s\n", crupath)
 
@@ -133,6 +133,11 @@ func readAppDirectories(directory string, paths *[]string) {
 		if strings.HasSuffix(fileInfo.Name(), "docs") {
 			continue
 		}
+
+		if isExcluded(fileInfo) {
+			continue
+		}
+
 		if fileInfo.IsDir() == true && fileInfo.Name()[0] != '.' {
 			readAppDirectories(directory+"/"+fileInfo.Name(), paths)
 			continue
@@ -149,4 +154,15 @@ func readAppDirectories(directory string, paths *[]string) {
 	}
 
 	return
+}
+
+// If a file is excluded
+func isExcluded(fileInfo os.FileInfo) bool {
+	for _, p := range excludedPaths {
+		if strings.HasSuffix(fileInfo.Name(), p) {
+			ColorLog("[INFO] Excluding from watching [ %s ]\n", fileInfo.Name())
+			return true
+		}
+	}
+	return false
 }

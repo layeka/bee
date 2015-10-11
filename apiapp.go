@@ -24,22 +24,23 @@ import (
 var cmdApiapp = &Command{
 	// CustomFlags: true,
 	UsageLine: "api [appname]",
-	Short:     "create an api application base on beego framework",
-	Long: `	
-create an api application base on beego framework
+	Short:     "create an API beego application",
+	Long: `
+Create an API beego application.
 
 bee api [appname] [-tables=""] [-driver=mysql] [-conn=root:@tcp(127.0.0.1:3306)/test]
-    -tables: a list of table names separated by ',', default is empty, indicating all tables
-    -driver: [mysql | postgres | sqlite], the default is mysql
+    -tables: a list of table names separated by ',' (default is empty, indicating all tables)
+    -driver: [mysql | postgres | sqlite] (default: mysql)
     -conn:   the connection string used by the driver, the default is ''
              e.g. for mysql:    root:@tcp(127.0.0.1:3306)/test
              e.g. for postgres: postgres://postgres:postgres@127.0.0.1:5432/postgres
-	
-if conn is empty will create a example api application. otherwise generate api application based on an existing database.
 
-In the current path, will create a folder named [appname]
+If 'conn' argument is empty, bee api creates an example API application,
+when 'conn' argument is provided, bee api generates an API application based
+on the existing database.
 
-In the appname folder has the follow struct:
+The command 'api' creates a folder named [appname] and inside the folder deploy
+the following files/directories structure:
 
 	├── conf
 	│   └── app.conf
@@ -472,7 +473,7 @@ func (u *UserController) Delete() {
 // @Description Logs user into the system
 // @Param	username		query 	string	true		"The username for login"
 // @Param	password		query 	string	true		"The password for login"
-// @Success 200 {string} lonin success
+// @Success 200 {string} login success
 // @Failure 403 user not exist
 // @router /login [get]
 func (u *UserController) Login() {
@@ -546,6 +547,10 @@ func init() {
 
 func createapi(cmd *Command, args []string) int {
 	curpath, _ := os.Getwd()
+	if len(args) < 1 {
+		ColorLog("[ERRO] Argument [appname] is missing\n")
+		os.Exit(2)
+	}
 	if len(args) > 1 {
 		cmd.Flag.Parse(args[1:])
 	}
@@ -650,9 +655,17 @@ func checkEnv(appname string) (apppath, packpath string, err error) {
 	haspath := false
 	wgopath := path.SplitList(gopath)
 	for _, wg := range wgopath {
-		wg, _ = path.EvalSymlinks(path.Join(wg, "src"))
+		wg = path.Join(wg, "src")
 
-		if path.HasPrefix(strings.ToLower(curpath), strings.ToLower(wg)) {
+		if strings.HasPrefix(strings.ToLower(curpath), strings.ToLower(wg)) {
+			haspath = true
+			appsrcpath = wg
+			break
+		}
+
+		wg, _ = path.EvalSymlinks(wg)
+
+		if strings.HasPrefix(strings.ToLower(curpath), strings.ToLower(wg)) {
 			haspath = true
 			appsrcpath = wg
 			break
